@@ -90,6 +90,7 @@ struct partial_scan {
     }
 
     inline glm::mat4x4 getTransform() const {
+#if 0
         const float s = 2.f / (rot.x*rot.x + rot.y*rot.y + rot.z*rot.z + rot.w*rot.w);
 
         const float xs = rot.x * s;
@@ -129,36 +130,10 @@ struct partial_scan {
         trafo[3][2] = t.z;
         trafo[3][3] = 1.f;
 
-
-        printf("correct trafo:\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n\n",
-               trafo[0][0], trafo[1][0], trafo[2][0], trafo[3][0],
-               trafo[0][1], trafo[1][1], trafo[2][1], trafo[3][1],
-               trafo[0][2], trafo[1][2], trafo[2][2], trafo[3][2],
-               trafo[0][3], trafo[1][3], trafo[2][3], trafo[3][3] );
-
-
-        const auto translatemat = glm::translate(t);
-        printf("translate mat:\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n\n",
-               translatemat[0][0], translatemat[1][0], translatemat[2][0], translatemat[3][0],
-               translatemat[0][1], translatemat[1][1], translatemat[2][1], translatemat[3][1],
-               translatemat[0][2], translatemat[1][2], translatemat[2][2], translatemat[3][2],
-               translatemat[0][3], translatemat[1][3], translatemat[2][3], translatemat[3][3] );
-
-
-
-        const auto rotatemat = glm::mat4_cast(rot);
-        printf("translate mat:\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n\n",
-               rotatemat[0][0], rotatemat[1][0], rotatemat[2][0], rotatemat[3][0],
-               rotatemat[0][1], rotatemat[1][1], rotatemat[2][1], rotatemat[3][1],
-               rotatemat[0][2], rotatemat[1][2], rotatemat[2][2], rotatemat[3][2],
-               rotatemat[0][3], rotatemat[1][3], rotatemat[2][3], rotatemat[3][3] );
-
-        exit(0);
-
-
         return trafo;
-        //return (glm::translate(t)*glm::mat4_cast(rot));
-        //return (glm::mat4_cast(rot)*glm::translate(t));
+#else
+        return ( glm::translate(t)*glm::mat4_cast(glm::inverse(rot)) );
+#endif
     }
 
     void print() const {
