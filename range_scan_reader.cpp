@@ -58,12 +58,12 @@ struct mesh
 
 struct camera {
     glm::vec3 pos = glm::vec3(0.f, 0.f, 0.f);
-    glm::quat rot = glm::quat(1.f, 0.f, 0.f, 0.f);
+    glm::quat rot = glm::quat_identity<glm::quat::value_type, glm::highp>();
 
     inline friend std::istream &operator>>(std::istream &iss, camera &cam) {
         std::string tmp;
         iss >> tmp;
-        iss >> cam.pos.x >> cam.pos.y >> cam.pos.z  >> cam.rot.w >> cam.rot.x >> cam.rot.y >> cam.rot.z;
+        iss >> cam.pos.x >> cam.pos.y >> cam.pos.z >> cam.rot.x >> cam.rot.y >> cam.rot.z >> cam.rot.w;
         return iss;
     }
 
@@ -80,17 +80,85 @@ struct partial_scan {
     std::string component;
     std::string filename;
     glm::vec3 t   = glm::vec3(0.f, 0.f, 0.f);
-    glm::quat rot = glm::quat(1.f, 0.f, 0.f, 0.f);
+    glm::quat rot = glm::quat_identity<glm::quat::value_type, glm::highp>();
 
     inline friend std::istream &operator>>(std::istream &iss, partial_scan &scan) {
         iss >> scan.component;
         iss >> scan.filename;
-        iss >> scan.t.x >> scan.t.y >> scan.t.z >> scan.rot.w >> scan.rot.x >> scan.rot.y >> scan.rot.z;
+        iss >> scan.t.x >> scan.t.y >> scan.t.z >> scan.rot.x >> scan.rot.y >> scan.rot.z >> scan.rot.w;
         return iss;
     }
 
     inline glm::mat4x4 getTransform() const {
-        return (glm::translate(t)*glm::mat4_cast(rot));
+        const float s = 2.f / (rot.x*rot.x + rot.y*rot.y + rot.z*rot.z + rot.w*rot.w);
+
+        const float xs = rot.x * s;
+        const float ys = rot.y * s;
+        const float zs = rot.z * s;
+
+        const float wx = rot.w * xs;
+        const float wy = rot.w * ys;
+        const float wz = rot.w * zs;
+
+        const float xx = rot.x * xs;
+        const float xy = rot.x * ys;
+        const float xz = rot.x * zs;
+
+        const float yy = rot.y * ys;
+        const float yz = rot.y * zs;
+        const float zz = rot.z * zs;
+
+        glm::mat4 trafo;
+        trafo[0][0] = 1.f - (yy + zz);
+        trafo[0][1] = xy - wz;
+        trafo[0][2] = xz + wy;
+        trafo[0][3] = 0.f;
+
+        trafo[1][0] = xy + wz;
+        trafo[1][1] = 1.f - (xx + zz);
+        trafo[1][2] = yz - wx;
+        trafo[1][3] = 0.f;
+
+        trafo[2][0] = xz - wy;
+        trafo[2][1] = yz + wx;
+        trafo[2][2] = 1.f - (xx + yy);
+        trafo[2][3] = 0.f;
+
+        trafo[3][0] = t.x;
+        trafo[3][1] = t.y;
+        trafo[3][2] = t.z;
+        trafo[3][3] = 1.f;
+
+
+        printf("correct trafo:\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n\n",
+               trafo[0][0], trafo[1][0], trafo[2][0], trafo[3][0],
+               trafo[0][1], trafo[1][1], trafo[2][1], trafo[3][1],
+               trafo[0][2], trafo[1][2], trafo[2][2], trafo[3][2],
+               trafo[0][3], trafo[1][3], trafo[2][3], trafo[3][3] );
+
+
+        const auto translatemat = glm::translate(t);
+        printf("translate mat:\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n\n",
+               translatemat[0][0], translatemat[1][0], translatemat[2][0], translatemat[3][0],
+               translatemat[0][1], translatemat[1][1], translatemat[2][1], translatemat[3][1],
+               translatemat[0][2], translatemat[1][2], translatemat[2][2], translatemat[3][2],
+               translatemat[0][3], translatemat[1][3], translatemat[2][3], translatemat[3][3] );
+
+
+
+        const auto rotatemat = glm::mat4_cast(rot);
+        printf("translate mat:\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n  %f %f %f %f\n\n",
+               rotatemat[0][0], rotatemat[1][0], rotatemat[2][0], rotatemat[3][0],
+               rotatemat[0][1], rotatemat[1][1], rotatemat[2][1], rotatemat[3][1],
+               rotatemat[0][2], rotatemat[1][2], rotatemat[2][2], rotatemat[3][2],
+               rotatemat[0][3], rotatemat[1][3], rotatemat[2][3], rotatemat[3][3] );
+
+        exit(0);
+
+
+        return trafo;
+        //return (glm::translate(t)*glm::mat4_cast(rot));
+        //return (glm::mat4_cast(rot)*glm::translate(t));
     }
 
     void print() const {
@@ -219,7 +287,7 @@ bool write_ply_file( const std::filesystem::path& file,
         file.add_properties_to_element("vertex", { "x", "y", "z", "nx", "ny", "nz", "scale" },
             Type::FLOAT32, vertices.size(), reinterpret_cast<uint8_t*>(vertices.data()), Type::INVALID, 0);
 
-        file.write(outstream, true);
+        file.write(outstream, false);
 
         return true;
     }
@@ -237,6 +305,52 @@ inline void transform_points( std::vector<vertex>& vertices, const glm::mat4& tr
 
     for (auto& v : vertices)
         v.transform(trafo, inv_trafo);
+}
+
+
+void compute_scale_values( std::shared_ptr<mesh>& m )
+{
+    struct edge { int begin, end; };
+    std::vector<edge> edges(m->indices.size()*3);
+
+    // create edges
+    for (auto i(0u); i<m->indices.size(); ++i) {
+        const auto f = m->indices[i];
+        edges[3*i+0] = ((f.v0 < f.v1) ? edge{f.v0, f.v1} : edge{f.v1, f.v0});
+        edges[3*i+1] = ((f.v1 < f.v2) ? edge{f.v1, f.v2} : edge{f.v2, f.v1});
+        edges[3*i+2] = ((f.v0 < f.v2) ? edge{f.v0, f.v2} : edge{f.v2, f.v0});
+    }
+
+    // sort edges
+    std::stable_sort(edges.begin(), edges.end(), [](const edge& a, const edge& b){return (a.end < b.end);});
+    std::stable_sort(edges.begin(), edges.end(), [](const edge& a, const edge& b){return (a.begin < b.begin);});
+
+    // remove duplicates
+    std::vector<edge> sorted_edges;
+    auto isDuplicate = [](const edge& a, const edge& b){ return ((a.end==b.end) && (a.begin==b.begin)); };
+    for (auto i(0u); i<edges.size(); ++i)
+        if (i==0 || !isDuplicate(edges[i-1], edges[i]))
+            sorted_edges.push_back(edges[i]);
+    edges.clear();
+
+    // accumulate edge-lengths
+    struct vertexscale { double s; int adjacency; };
+    std::vector<vertexscale> scales(m->vertices.size(), {0., 0});
+    for (const auto& e : sorted_edges) {
+        const auto v0 = m->vertices[e.begin];
+        const auto v1 = m->vertices[e.end];
+        const auto length = glm::length( v1.p-v0.p );
+
+        scales[e.begin].s           += static_cast<double>(length);
+        scales[e.begin].adjacency   += 1;
+
+        scales[e.end].s         += static_cast<double>(length);
+        scales[e.end].adjacency += 1;
+    }
+
+    // compute avg length and store scale value in mesh vertex
+    for (auto i(0u); i<scales.size(); ++i)
+        m->vertices[i].scale = static_cast<float>(scales[i].s / double(scales[i].adjacency));
 }
 
 
@@ -259,13 +373,16 @@ bool transform( const std::filesystem::path& conf_file,
 
             // read mesh, transform points, compute scale from edge lengths and insert points into commpound
             std::shared_ptr<mesh> part = read_ply_file(mesh_file);
-            transform_points(part->vertices,  scan.getTransform());
+            transform_points(part->vertices, scan.getTransform());
+            compute_scale_values(part);
             compound.insert(compound.end(), part->vertices.begin(), part->vertices.end());
-
-            //write_ply_file(input_file.string() + ".normals.ply", part->vertices);
         }
 
+    // transform points as given in compound
+    //transform_points(compound, conf.compound.getTransform());
+
     write_ply_file(output, compound);
+    return true;
 }
 
 
@@ -273,391 +390,3 @@ bool transform( const std::filesystem::path& conf_file,
 
 } // end namespace range_scan
 } // end namespace stanford_repo
-
-
-
-
-
-
-
-
-
-
-
-#if 0
-
-// OTHER SOLUTIONS
-boost::math::quaternion<double> translation, quaternionRotation;
-
-//Get Transformation
-translationVec = glm::dvec4(lineData[2].toDouble(), lineData[3].toDouble(), lineData[4].toDouble(),0.0);
-quaternionRotation = boost::math::quaternion<double>(lineData[8].toDouble(),lineData[5].toDouble(),lineData[6].toDouble(),lineData[7].toDouble());
-
-//calculate the unit quaternion
-double magnitude = std::sqrt(
-      quaternionRotation.R_component_1()*quaternionRotation.R_component_1()+
-      quaternionRotation.R_component_2()*quaternionRotation.R_component_2()+
-      quaternionRotation.R_component_3()*quaternionRotation.R_component_3()+
-      quaternionRotation.R_component_4()*quaternionRotation.R_component_4());
-quaternionRotation /= magnitude;
-rotationMat = this->quat_to_mat(quaternionRotation);
-
-//do some file related stuff
-//...
-
-//for each line: read the point data and transform it and store the point in a data array
-pointData[j].x = stringPointData[0].toDouble();
-pointData[j].y = stringPointData[1].toDouble();
-pointData[j].z = stringPointData[2].toDouble();
-//transform the curren point
-glm::dvec4 curPoint =  glm::dvec4(pointData[j].x,pointData[j].y,pointData[j].z,1.0);
-//first rotation
-curPoint = rotationMat*curPoint;
-//then translation
-curPoint += translationVec;
-//store the data in a data array
-pointData[j].x = curPoint.x;
-pointData[j].y = curPoint.y;
-pointData[j].z = curPoint.z;
-
-
-
-
-
-// OTHER SOLUTIONS
-#include <string>
-#include <vector>
-#include <sstream>
-#include <iostream>
-#include <stdio.h>
-#include <ctype.h>
-#include <string.h>
-#include <stdlib.h>
-#include <math.h>
-
-#ifndef M_PI
-#define M_PI 3.14159265
-#endif
-
-class LineInput {
-  public:
-    LineInput(const std::string& filename) {
-        F_ = fopen(filename.c_str(), "r" ) ;
-        ok_ = (F_ != 0) ;
-    }
-    ~LineInput() {
-        if(F_ != 0) {
-            fclose(F_); F_ = 0 ;
-        }
-    }
-    bool OK() const { return ok_ ; }
-    bool eof() const { return feof(F_) ; }
-    bool get_line() {
-        line_[0] = '\0' ;
-        // Skip the empty lines
-        while(!isprint(line_[0])) {
-            if(fgets(line_, MAX_LINE_LEN, F_) == 0) {
-                return false ;
-            }
-        }
-        // If the line ends with a backslash, append
-        // the next line to the current line.
-        bool check_multiline = true ;
-        int total_length = MAX_LINE_LEN ;
-        char* ptr = line_ ;
-        while(check_multiline) {
-            int L = strlen(ptr) ;
-            total_length -= L ;
-            ptr = ptr + L - 2;
-            if(*ptr == '\\' && total_length > 0) {
-                *ptr = ' ' ;
-                ptr++ ;
-                fgets(ptr, total_length, F_) ;
-            } else {
-                check_multiline = false ;
-            }
-        }
-        if(total_length < 0) {
-            std::cerr
-                << "MultiLine longer than "
-                << MAX_LINE_LEN << " bytes" << std::endl ;
-        }
-        return true ;
-    }
-    int nb_fields() const { return field_.size() ;  }
-    char* field(int i) { return field_[i] ;   }
-    int field_as_int(int i) {
-        int result ;
-        ok_ = ok_ && (sscanf(field(i), "%d", &result) == 1) ;
-        return result ;
-    }
-    double field_as_double(int i) {
-        double result ;
-        ok_ = ok_ && (sscanf(field(i), "%lf", &result) == 1) ;
-        return result ;
-    }
-    bool field_matches(int i, const char* s) {
-        return !strcmp(field(i), s) ;
-    }
-    void get_fields(const char* separators=" \t\r\n") {
-        field_.resize(0) ;
-        char* tok = strtok(line_,separators) ;
-        while(tok != 0) {
-            field_.push_back(tok) ;
-            tok = strtok(0,separators) ;
-        }
-    }
-
-  private:
-    enum { MAX_LINE_LEN = 65535 } ;
-    FILE* F_ ;
-    char line_[MAX_LINE_LEN] ;
-    std::vector<char*> field_ ;
-    bool ok_ ;
-} ;
-
-std::string to_string(int x, int mindigits) {
-    char buff[100] ;
-    sprintf(buff, "%03d", x) ;
-    return std::string(buff) ;
-}
-
-double M[4][4] ;
-
-void transform(double* xyz) {
-    double xyzw[4] ;
-    for(unsigned int c=0; c<4; c++) {
-        xyzw[c] = M[3][c] ;
-    }
-    for(unsigned int j=0; j<4; j++) {
-        for(unsigned int i=0; i<3; i++) {
-            xyzw[j] += M[i][j] * xyz[i] ;
-        }
-    }
-    for(unsigned int c=0; c<3; c++) {
-        xyz[c] = xyzw[c] / xyzw[3] ;
-    }
-}
-
-bool read_frames_file(int no) {
-    std::string filename = "scan" + to_string(no,3) + ".frames" ;
-    std::cerr << "Reading frames from:" << filename << std::endl ;
-    LineInput in(filename) ;
-    if(!in.OK()) {
-       std::cerr << " ... not found" << std::endl ;
-       return false ;
-    }
-    while(!in.eof() && in.get_line()) {
-        in.get_fields() ;
-        if(in.nb_fields() == 17) {
-            int f = 0 ;
-            for(unsigned int i=0; i<4; i++) {
-                for(unsigned int j=0; j<4; j++) {
-                    M[i][j] = in.field_as_double(f) ; f++ ;
-                }
-            }
-        }
-    }
-    return true ;
-}
-
-bool read_pose_file(int no) {
-    std::string filename = "scan" + to_string(no,3) + ".pose" ;
-    std::cerr << "Reading pose from:" << filename << std::endl ;
-    LineInput in(filename) ;
-    if(!in.OK()) {
-       std::cerr << " ... not found" << std::endl ;
-       return false ;
-    }
-    double xyz[3] ;
-    double euler[3] ;
-    in.get_line() ;
-    in.get_fields() ;
-    xyz[0] = in.field_as_double(0) ;
-    xyz[1] = in.field_as_double(1) ;
-    xyz[2] = in.field_as_double(2) ;
-    in.get_line() ;
-    in.get_fields() ;
-    euler[0] = in.field_as_double(0) * M_PI / 180.0 ;
-    euler[1] = in.field_as_double(1) * M_PI / 180.0 ;
-    euler[2] = in.field_as_double(2) * M_PI / 180.0 ;
-
-   double sx = sin(euler[0]);
-   double cx = cos(euler[0]);
-   double sy = sin(euler[1]);
-   double cy = cos(euler[1]);
-   double sz = sin(euler[2]);
-   double cz = cos(euler[2]);
-
-   M[0][0] = cy*cz;
-   M[0][1] = sx*sy*cz + cx*sz;
-   M[0][2] = -cx*sy*cz + sx*sz;
-   M[0][3] = 0.0;
-   M[1][0] = -cy*sz;
-   M[1][1] = -sx*sy*sz + cx*cz;
-   M[1][2] = cx*sy*sz + sx*cz;
-   M[1][3] = 0.0;
-   M[2][0] = sy;
-   M[2][1] = -sx*cy;
-   M[2][2] = cx*cy;
-   M[2][3] = 0.0;
-   M[3][0] = xyz[0];
-   M[3][1] = xyz[1];
-   M[3][2] = xyz[2];
-   M[3][3] = 1.0;
-   return true ;
-}
-
-void setup_transform_from_translation_and_quaternion(
-    double Tx, double Ty, double Tz,
-    double Qx, double Qy, double Qz, double Qw
-) {
-    /* for unit q, just set s = 2 or set xs = Qx + Qx, etc. */
-
-    double s = 2.0 / (Qx*Qx + Qy*Qy + Qz*Qz + Qw*Qw);
-
-    double xs = Qx * s;
-    double ys = Qy * s;
-    double zs = Qz * s;
-
-    double wx = Qw * xs;
-    double wy = Qw * ys;
-    double wz = Qw * zs;
-
-    double xx = Qx * xs;
-    double xy = Qx * ys;
-    double xz = Qx * zs;
-
-    double yy = Qy * ys;
-    double yz = Qy * zs;
-    double zz = Qz * zs;
-
-    M[0][0] = 1.0 - (yy + zz);
-    M[0][1] = xy - wz;
-    M[0][2] = xz + wy;
-    M[0][3] = 0.0;
-
-    M[1][0] = xy + wz;
-    M[1][1] = 1 - (xx + zz);
-    M[1][2] = yz - wx;
-    M[1][3] = 0.0;
-
-    M[2][0] = xz - wy;
-    M[2][1] = yz + wx;
-    M[2][2] = 1 - (xx + yy);
-    M[2][3] = 0.0;
-
-    M[3][0] = Tx;
-    M[3][1] = Ty;
-    M[3][2] = Tz;
-    M[3][3] = 1.0;
-}
-
-bool read_points_file(int no) {
-    std::string filename = "scan" + to_string(no,3) + ".3d" ;
-    std::cerr << "Reading points from:" << filename << std::endl ;
-    LineInput in(filename) ;
-    if(!in.OK()) {
-       std::cerr << " ... not found" << std::endl ;
-       return false ;
-    }
-    while(!in.eof() && in.get_line()) {
-        in.get_fields() ;
-        double xyz[3] ;
-        if(in.nb_fields() >= 3) {
-            for(unsigned int c=0; c<3; c++) {
-                xyz[c] = in.field_as_double(c) ;
-            }
-            transform(xyz) ;
-            printf("%f %f %f\n",xyz[0],xyz[1],xyz[2]) ;
-        }
-    }
-    return true ;
-}
-
-.0530127 0.138516 0.0990356 0.908911 -0.0569874 0.154429 0.383126
-
-/* only works for ASCII PLY files */
-void read_ply_file(char* filename) {
-    std::cerr << "Reading points from:" << filename << std::endl;
-    LineInput in(filename) ;
-    if(!in.OK()) {
-        std::cerr << filename << ": could not open" << std::endl ;
-        return;
-    }
-    bool reading_vertices = false;
-    int nb_vertices = 0 ;
-    int nb_read_vertices = 0 ;
-    while(!in.eof() && in.get_line()) {
-        in.get_fields();
-        if(reading_vertices) {
-            double xyz[3] ;
-            for(unsigned int c=0; c<3; c++) {
-                xyz[c] = in.field_as_double(c) ;
-            }
-            transform(xyz) ;
-            printf("%f %f %f\n",xyz[0],xyz[1],xyz[2]) ;
-            ++nb_read_vertices;
-            if(nb_read_vertices == nb_vertices) {
-                return;
-            }
-        } else if(
-            in.field_matches(0,"element") &&
-            in.field_matches(1,"vertex")
-        ) {
-            nb_vertices = in.field_as_int(2);
-        } else if(in.field_matches(0,"end_header")) {
-            reading_vertices = true;
-        }
-    }
-}
-
-/* For Stanford scanning repository */
-void read_conf_file(char* filename) {
-    LineInput in(filename) ;
-    if(!in.OK()) {
-        std::cerr << filename << ": could not open" << std::endl ;
-        return;
-    }
-    while(!in.eof() && in.get_line()) {
-        in.get_fields();
-        if(in.nb_fields() == 0) { continue ; }
-        if(in.field_matches(0,"bmesh")) {
-            char* filename = in.field(1);
-            // Translation vector
-            double Tx = in.field_as_double(2);
-            double Ty = in.field_as_double(3);
-            double Tz = in.field_as_double(4);
-            /// Quaternion
-            double Qx = in.field_as_double(5);
-            double Qy = in.field_as_double(6);
-            double Qz = in.field_as_double(7);
-            double Qw = in.field_as_double(8);
-            setup_transform_from_translation_and_quaternion(Tx,Ty,Tz,Qx,Qy,Qz,Qw);
-            read_ply_file(filename);
-        }
-    }
- }
-
-
-int main(int argc, char** argv) {
-    if(argc != 2) { return -1 ; }
-    if(strstr(argv[1],".conf")) {
-        read_conf_file(argv[1]);
-    } else {
-        int max_i = atoi(argv[1]) ;
-        for(int i=0; i<=max_i; i++) {
-            if(!read_frames_file(i)) {
-                read_pose_file(i) ;
-            }
-            read_points_file(i) ;
-        }
-    }
-    return 0 ;
-}
-
-
-
-
-#endif
-

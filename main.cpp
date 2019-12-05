@@ -58,8 +58,24 @@ int main(int argc, char** argv)
     //const std::string conf_file   = getOption(argv, argv + argc, "-i", "", std::string(""));
     //const std::string output_file = getOption(argv, argv + argc, "-o", "", std::string(""));
 
-    const std::filesystem::path conf_file{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_back/happyBackRight.conf"};
-    stanford_repo::range_scan::transform(conf_file, "./test.ply");
+    //const std::filesystem::path conf_file1{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_back/happyBackRight.conf"};
+    //stanford_repo::range_scan::transform(conf_file1, "./output/backright.ply");
+
+    //const std::filesystem::path conf_file2{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_backdrop/carvers.conf"};
+    //stanford_repo::range_scan::transform(conf_file2, "./output/carvers.ply");
+
+    //const std::filesystem::path conf_file3{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_fillers/fillers.conf"};
+    //stanford_repo::range_scan::transform(conf_file3, "./output/fillers.ply");
+
+    //const std::filesystem::path conf_file4{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_side/happySideRight.conf"};
+    //stanford_repo::range_scan::transform(conf_file4, "./output/sideright.ply");
+
+    //const std::filesystem::path conf_file5{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_stand/happyStandRight.conf"};
+    //stanford_repo::range_scan::transform(conf_file5, "./output/stand.ply");
+
+    const std::filesystem::path conf_file5{"/data/datasets/Stanford3dScanRepository/bunny/data/bun.conf"};
+    stanford_repo::range_scan::transform(conf_file5, "./output/bunny.ply");
+
 
     return EXIT_SUCCESS;
 }
