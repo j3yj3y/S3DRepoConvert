@@ -45,7 +45,7 @@ struct vertex {
 };
 
 struct face {
-    int v0, v1, v2;
+    unsigned int v0, v1, v2;
 };
 
 struct mesh
@@ -61,9 +61,8 @@ struct camera {
     glm::quat rot = glm::quat_identity<glm::quat::value_type, glm::highp>();
 
     inline friend std::istream &operator>>(std::istream &iss, camera &cam) {
-        std::string tmp;
-        iss >> tmp;
-        iss >> cam.pos.x >> cam.pos.y >> cam.pos.z >> cam.rot.x >> cam.rot.y >> cam.rot.z >> cam.rot.w;
+        iss >> cam.pos.x >> cam.pos.y >> cam.pos.z
+            >> cam.rot.x >> cam.rot.y >> cam.rot.z >> cam.rot.w;
         return iss;
     }
 
@@ -77,68 +76,23 @@ struct camera {
 
 
 struct partial_scan {
-    std::string component;
     std::string filename;
     glm::vec3 t   = glm::vec3(0.f, 0.f, 0.f);
     glm::quat rot = glm::quat_identity<glm::quat::value_type, glm::highp>();
 
     inline friend std::istream &operator>>(std::istream &iss, partial_scan &scan) {
-        iss >> scan.component;
         iss >> scan.filename;
-        iss >> scan.t.x >> scan.t.y >> scan.t.z >> scan.rot.x >> scan.rot.y >> scan.rot.z >> scan.rot.w;
+        iss >> scan.t.x >> scan.t.y >> scan.t.z
+            >> scan.rot.x >> scan.rot.y >> scan.rot.z >> scan.rot.w;
         return iss;
     }
 
     inline glm::mat4x4 getTransform() const {
-#if 0
-        const float s = 2.f / (rot.x*rot.x + rot.y*rot.y + rot.z*rot.z + rot.w*rot.w);
-
-        const float xs = rot.x * s;
-        const float ys = rot.y * s;
-        const float zs = rot.z * s;
-
-        const float wx = rot.w * xs;
-        const float wy = rot.w * ys;
-        const float wz = rot.w * zs;
-
-        const float xx = rot.x * xs;
-        const float xy = rot.x * ys;
-        const float xz = rot.x * zs;
-
-        const float yy = rot.y * ys;
-        const float yz = rot.y * zs;
-        const float zz = rot.z * zs;
-
-        glm::mat4 trafo;
-        trafo[0][0] = 1.f - (yy + zz);
-        trafo[0][1] = xy - wz;
-        trafo[0][2] = xz + wy;
-        trafo[0][3] = 0.f;
-
-        trafo[1][0] = xy + wz;
-        trafo[1][1] = 1.f - (xx + zz);
-        trafo[1][2] = yz - wx;
-        trafo[1][3] = 0.f;
-
-        trafo[2][0] = xz - wy;
-        trafo[2][1] = yz + wx;
-        trafo[2][2] = 1.f - (xx + yy);
-        trafo[2][3] = 0.f;
-
-        trafo[3][0] = t.x;
-        trafo[3][1] = t.y;
-        trafo[3][2] = t.z;
-        trafo[3][3] = 1.f;
-
-        return trafo;
-#else
         return ( glm::translate(t)*glm::mat4_cast(glm::inverse(rot)) );
-#endif
     }
 
     void print() const {
-        std::cout << "partial_scan: "
-                  << component << filename << "\t"
+        std::cout << filename << "\t"
                   << "trans( " << t.x << ", " << t.y << ", " << t.z << " ) "
                   << "quat( " << rot.x << ", " << rot.y << ", " << rot.z << ", " << rot.w << " )"
                   << std::endl;
@@ -154,8 +108,12 @@ struct conf_file {
     void print() const {
         std::cout << "conf_file:\n";
         cam.print();
+        printf("compound: ");
         compound.print();
-        for(const auto& s : single_scans) s.print();
+        for(const auto& s : single_scans) {
+            printf("scan: ");
+            s.print();
+        }
         std::cout << std::endl << std::flush;
     }
 };
@@ -170,26 +128,23 @@ conf_file parse_conf_file( const std::filesystem::path & conf_file)
     if (ss.fail()) throw std::runtime_error("failed to open " + conf_file.string());
     std::string line;
 
-    {
-        // first extract camera info:
-        if( !std::getline(ss, line) ) throw std::runtime_error("invalid conf file");
-        std::istringstream iss(line);
-        iss >> conf.cam;
-
-        // extract compound
-        if( !std::getline(ss, line) ) throw std::runtime_error("invalid conf file");
-        iss = std::istringstream(line);
-        iss >> conf.compound;
-    }
-
-    // extract single scans:
     while (std::getline(ss, line))
     {
         std::istringstream iss(line);
-        partial_scan scan;
-        if (!(iss >> scan)) { break; }
+        std::string type;
+        if (!(iss >> type)) { break; }
 
-        conf.single_scans.push_back(scan);
+        if (type == "camera")
+            iss >> conf.cam;
+
+        if (type == "mesh")
+            iss >> conf.compound;
+
+        if (type == "bmesh") {
+            partial_scan scan;
+            iss >> scan;
+            conf.single_scans.push_back(scan);
+        }
     }
 
     ss.close();
@@ -232,7 +187,9 @@ std::shared_ptr<mesh> read_ply_file( const std::filesystem::path& file )
             result_mesh->vertices[i] = {vptr[6*i], vptr[6*i+1], vptr[6*i+2], vptr[6*i+3], vptr[6*i+4], vptr[6*i+5], 0.f};
 
         for (auto i(0u); i<plyfaces->count; ++i)
-            result_mesh->indices[i] = {iptr[3*i], iptr[3*i+1], iptr[3*i+2]};
+            result_mesh->indices[i] = {static_cast<unsigned int>(iptr[3*i]),
+                                       static_cast<unsigned int>(iptr[3*i+1]),
+                                       static_cast<unsigned int>(iptr[3*i+2])};
 
         return result_mesh;
     }
@@ -285,7 +242,7 @@ inline void transform_points( std::vector<vertex>& vertices, const glm::mat4& tr
 
 void compute_scale_values( std::shared_ptr<mesh>& m )
 {
-    struct edge { int begin, end; };
+    struct edge { unsigned int begin, end; };
     std::vector<edge> edges(m->indices.size()*3);
 
     // create edges
@@ -336,22 +293,21 @@ bool transform( const std::filesystem::path& conf_file,
     const struct conf_file      conf   = parse_conf_file(conf_file);
     std::vector<vertex>         compound;
 
+    for (auto & scan : conf.single_scans)
+    {
+        const std::filesystem::path input_file{ folder.string() + "/" + scan.filename };
+        const std::filesystem::path mesh_file{ "./tmp.ply" };
 
-        for (auto & scan : conf.single_scans)
-        {
-            const std::filesystem::path input_file{ folder.string() + "/" + scan.filename };
-            const std::filesystem::path mesh_file{ "./tmp.ply" };
+        // execute meshlab server to compute vertex normals and triangulate range scan
+        const auto cmd = std::string("meshlabserver -i " + input_file.string() + " -o " + mesh_file.string() + " -m vn");
+        if (system(cmd.c_str()) != 0) { printf("ERROR: no meshlabserver available!"); return false; }
 
-            // execute meshlab server to compute vertex normals and triangulate range scan
-            const auto cmd = std::string("meshlabserver -i " + input_file.string() + " -o " + mesh_file.string() + " -m vn");
-            if (system(cmd.c_str()) != 0) { printf("ERROR: no meshlabserver available!"); return false; }
-
-            // read mesh, transform points, compute scale from edge lengths and insert points into commpound
-            std::shared_ptr<mesh> part = read_ply_file(mesh_file);
-            transform_points(part->vertices, scan.getTransform());
+        // read mesh, transform points, compute scale from edge lengths and insert points into commpound
+        std::shared_ptr<mesh> part = read_ply_file(mesh_file);
+        transform_points(part->vertices, scan.getTransform());
             compute_scale_values(part);
-            compound.insert(compound.end(), part->vertices.begin(), part->vertices.end());
-        }
+        compound.insert(compound.end(), part->vertices.begin(), part->vertices.end());
+    }
 
     // transform points as given in compound
     //transform_points(compound, conf.compound.getTransform());
@@ -359,6 +315,54 @@ bool transform( const std::filesystem::path& conf_file,
     write_ply_file(output, compound);
     return true;
 }
+
+
+
+
+
+#if 0
+const float s = 2.f / (rot.x*rot.x + rot.y*rot.y + rot.z*rot.z + rot.w*rot.w);
+
+const float xs = rot.x * s;
+const float ys = rot.y * s;
+const float zs = rot.z * s;
+
+const float wx = rot.w * xs;
+const float wy = rot.w * ys;
+const float wz = rot.w * zs;
+
+const float xx = rot.x * xs;
+const float xy = rot.x * ys;
+const float xz = rot.x * zs;
+
+const float yy = rot.y * ys;
+const float yz = rot.y * zs;
+const float zz = rot.z * zs;
+
+glm::mat4 trafo;
+trafo[0][0] = 1.f - (yy + zz);
+trafo[0][1] = xy - wz;
+trafo[0][2] = xz + wy;
+trafo[0][3] = 0.f;
+
+trafo[1][0] = xy + wz;
+trafo[1][1] = 1.f - (xx + zz);
+trafo[1][2] = yz - wx;
+trafo[1][3] = 0.f;
+
+trafo[2][0] = xz - wy;
+trafo[2][1] = yz + wx;
+trafo[2][2] = 1.f - (xx + yy);
+trafo[2][3] = 0.f;
+
+trafo[3][0] = t.x;
+trafo[3][1] = t.y;
+trafo[3][2] = t.z;
+trafo[3][3] = 1.f;
+
+return trafo;
+#endif
+
 
 
 

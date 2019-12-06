@@ -41,8 +41,8 @@ void print_usage()
     std::cout << "Usage: " << std::endl;
     std::cout << "\t" << "stanford3drepoconvertert <input-path> <output-path>" << std::endl << std::endl;
     std::cout << "Options:" << std::endl;
-    std::cout << "\t" << "-i <input-path> \tInput 'conf' file containing range-scan" << std::endl;
-    std::cout << "\t" << "-o <output-path> \tResulting output 'ply' file containing transformed and aligned scans" << std::endl;
+    std::cout << "\t" << "-i <input-path> \tInput directory containing stanford conf files (subdirectories are allowed too)" << std::endl;
+    std::cout << "\t" << "-o <output-path> \tOutput directory containing transformed and aligned scans" << std::endl;
     std::cout << "\t" << "--help prints out this usage page" << std::endl;
 }
 
@@ -50,32 +50,24 @@ void print_usage()
 
 int main(int argc, char** argv)
 {
-    //if (argc < 3 || optionSet(argv, argv + argc, "--help")) {
-    //    print_usage();
-    //    return EXIT_SUCCESS;
-    //}
-    //
-    //const std::string conf_file   = getOption(argv, argv + argc, "-i", "", std::string(""));
-    //const std::string output_file = getOption(argv, argv + argc, "-o", "", std::string(""));
+    if (argc < 3 || optionSet(argv, argv + argc, "--help")) {
+        print_usage();
+        return EXIT_SUCCESS;
+    }
 
-    const std::filesystem::path conf_file1{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_back/happyBackRight.conf"};
-    stanford_repo::range_scan::transform(conf_file1, "./output/backright.ply");
+    const std::filesystem::path input_dir  = getOption(argv, argv + argc, "-i", "", std::string(""));
+    const std::filesystem::path output_dir = getOption(argv, argv + argc, "-o", "", std::string(""));
 
-    //const std::filesystem::path conf_file2{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_backdrop/carvers.conf"};
-    //stanford_repo::range_scan::transform(conf_file2, "./output/carvers.ply");
+    if (!std::filesystem::exists(output_dir))
+        std::filesystem::create_directory(output_dir);
 
-    //const std::filesystem::path conf_file3{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_fillers/fillers.conf"};
-    //stanford_repo::range_scan::transform(conf_file3, "./output/fillers.ply");
+    std::vector<std::filesystem::path> conf_files;
+    for (const auto& p : std::filesystem::recursive_directory_iterator(input_dir))
+        if(p.path().extension() == ".conf")
+            conf_files.push_back(p);
 
-    const std::filesystem::path conf_file4{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_side/happySideRight.conf"};
-    stanford_repo::range_scan::transform(conf_file4, "./output/sideright.ply");
-
-    const std::filesystem::path conf_file5{"/data/datasets/Stanford3dScanRepository/happy_buddha/happy_scans/happy_stand/happyStandRight.conf"};
-    stanford_repo::range_scan::transform(conf_file5, "./output/stand.ply");
-
-    //const std::filesystem::path conf_file5{"/data/datasets/Stanford3dScanRepository/bunny/data/bun.conf"};
-    //stanford_repo::range_scan::transform(conf_file5, "./output/bunny.ply");
-
+    for (auto& conf : conf_files)
+        stanford_repo::range_scan::transform(conf, output_dir / conf.filename().replace_extension(".ply"));
 
     return EXIT_SUCCESS;
 }
